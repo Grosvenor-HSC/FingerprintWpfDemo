@@ -1,0 +1,100 @@
+﻿<Window x:Class="FingerprintWpfDemo.IdentifyWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        Title="Scan &amp; Verify"
+        Height="320" Width="480"
+        WindowStartupLocation="CenterOwner"
+        WindowStyle="None"
+        ResizeMode="CanMinimize"
+        Background="{StaticResource BackgroundBrush}">
+    <Grid>
+        <Border Background="{StaticResource CardBrush}"
+                CornerRadius="16"
+                Padding="20"
+                Margin="20"
+                MouseDown="CardBorder_MouseDown">
+            <Grid>
+                <Grid.RowDefinitions>
+                    <RowDefinition Height="Auto"/>
+                    <RowDefinition Height="Auto"/>
+                    <RowDefinition Height="Auto"/>
+                    <RowDefinition Height="*"/>
+                </Grid.RowDefinitions>
+
+                <!-- Header with close button -->
+                <Grid Grid.Row="0" Margin="0,0,0,10">
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition/>
+                        <ColumnDefinition Width="Auto"/>
+                    </Grid.ColumnDefinitions>
+
+                    <TextBlock Text="Verify identity"
+                               FontSize="18"
+                               FontWeight="SemiBold"
+                               Foreground="{StaticResource TextPrimaryBrush}"
+                               Grid.Column="0"/>
+
+                    <Button Grid.Column="1"
+                            Content="✕"
+                            Width="24"
+                            Height="24"
+                            Margin="8,0,0,0"
+                            VerticalAlignment="Top"
+                            Style="{StaticResource SecondaryButtonStyle}"
+                            Click="CloseButton_Click"/>
+                </Grid>
+
+                <!-- Name input -->
+                <StackPanel Grid.Row="1" Orientation="Vertical" Margin="0,0,0,10">
+                    <TextBlock Text="Employee name"
+                               FontSize="12"
+                               Foreground="{StaticResource TextSecondaryBrush}"/>
+                    <TextBox x:Name="txtName"
+                             Height="28"
+                             Margin="0,4,0,0"
+                             Padding="6,2"
+                             Background="#FF020617"
+                             Foreground="{StaticResource TextPrimaryBrush}"
+                             BorderBrush="#FF334155"
+                             BorderThickness="1"
+                             CaretBrush="White"/>
+                </StackPanel>
+
+                <!-- Scan + result -->
+                <StackPanel Grid.Row="2"
+                            Orientation="Horizontal"
+                            VerticalAlignment="Center"
+                            Margin="0,0,0,10">
+                    <Button x:Name="btnScan"
+                            Content="Scan &amp; Verify"
+                            Width="140" Height="34"
+                            Style="{StaticResource PrimaryButtonStyle}"
+                            Click="btnScan_Click"/>
+
+                    <TextBlock x:Name="txtResult"
+                               Margin="12,0,0,0"
+                               VerticalAlignment="Center"
+                               FontSize="13"
+                               Foreground="{StaticResource TextSecondaryBrush}"/>
+                </StackPanel>
+
+                <!-- Details / logs -->
+                <Expander Grid.Row="3"
+                          Header="Details"
+                          Foreground="{StaticResource TextSecondaryBrush}"
+                          FontSize="12"
+                          IsExpanded="False">
+                    <TextBox x:Name="txtLog"
+                             Margin="0,5,0,0"
+                             VerticalScrollBarVisibility="Auto"
+                             HorizontalScrollBarVisibility="Auto"
+                             TextWrapping="Wrap"
+                             IsReadOnly="True"
+                             AcceptsReturn="True"
+                             Background="#FF020617"
+                             Foreground="{StaticResource TextSecondaryBrush}"/>
+                </Expander>
+            </Grid>
+        </Border>
+    </Grid>
+</Window>

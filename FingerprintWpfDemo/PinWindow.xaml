@@ -1,0 +1,23 @@
+﻿<Window x:Class="FingerprintWpfDemo.PinWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        Title="Enter Management PIN" Height="160" Width="280"
+        WindowStartupLocation="CenterOwner"
+        ResizeMode="NoResize">
+    <Grid Margin="10">
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="Auto"/>
+        </Grid.RowDefinitions>
+
+        <StackPanel Grid.Row="0" Margin="0,0,0,10">
+            <TextBlock Text="Enter management PIN:" Margin="0,0,0,5"/>
+            <PasswordBox x:Name="pwdPin" Width="200"/>
+        </StackPanel>
+
+        <StackPanel Grid.Row="1" Orientation="Horizontal" HorizontalAlignment="Right">
+            <Button Content="OK" Width="70" Margin="0,0,10,0" Click="btnOk_Click"/>
+            <Button Content="Cancel" Width="70" Click="btnCancel_Click"/>
+        </StackPanel>
+    </Grid>
+</Window>
