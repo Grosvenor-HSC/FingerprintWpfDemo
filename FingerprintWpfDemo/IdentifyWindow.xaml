@@ -71,11 +71,18 @@
                             Style="{StaticResource PrimaryButtonStyle}"
                             Click="btnScan_Click"/>
 
-                    <TextBlock x:Name="txtResult"
-                               Margin="12,0,0,0"
-                               VerticalAlignment="Center"
-                               FontSize="13"
-                               Foreground="{StaticResource TextSecondaryBrush}"/>
+                    <Border x:Name="ResultPanel"
+                            Margin="12,0,0,0"
+                            VerticalAlignment="Center"
+                            Padding="4,2"
+                            CornerRadius="4"
+                            Background="#FF020617">
+                        <TextBlock x:Name="txtResult"
+                                   VerticalAlignment="Center"
+                                   FontSize="13"
+                                   Foreground="{StaticResource TextSecondaryBrush}"
+                                   Text="Ready."/>
+                    </Border>
                 </StackPanel>
 
                 <!-- Details / logs -->
