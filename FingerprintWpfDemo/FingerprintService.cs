@@ -1,5 +1,6 @@
 ﻿using System;
 using System.Collections.Generic;
+using System.IO;            // Needed for File/Path
 using DPUruNet;
 
 namespace FingerprintWpfDemo
@@ -8,18 +9,34 @@ namespace FingerprintWpfDemo
     {
         private Reader _reader;
         private bool _initialized;
+        public string LastError { get; private set; }
 
-        // Name -> Template
         private readonly Dictionary<string, Fmd> _templates =
             new Dictionary<string, Fmd>(StringComparer.OrdinalIgnoreCase);
 
+        private readonly Dictionary<string, int> _enrollmentIds =
+            new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
+
         private const int MATCH_THRESHOLD = 100;
 
-        public IReadOnlyDictionary<string, Fmd> Templates => _templates;
-        public bool IsInitialized => _initialized;
+        // Local template storage directory
+        private readonly string _templateDir;
 
-        public string LastError { get; private set; }
+        public FingerprintService()
+        {
+            LastError = string.Empty;
 
+            _templateDir = Path.Combine(
+                AppDomain.CurrentDomain.BaseDirectory,
+                "templates");
+
+            if (!Directory.Exists(_templateDir))
+                Directory.CreateDirectory(_templateDir);
+        }
+
+        // ------------------------------------------------------------
+        // INITIALIZE READER
+        // ------------------------------------------------------------
         public bool Initialize()
         {
             try
@@ -33,166 +50,190 @@ namespace FingerprintWpfDemo
 
                 _reader = readers[0];
 
-                var openResult = _reader.Open(Constants.CapturePriority.DP_PRIORITY_EXCLUSIVE);
-                if (openResult != Constants.ResultCode.DP_SUCCESS)
+                var rc = _reader.Open(Constants.CapturePriority.DP_PRIORITY_EXCLUSIVE);
+                if (rc != Constants.ResultCode.DP_SUCCESS)
                 {
-                    openResult = _reader.Open(Constants.CapturePriority.DP_PRIORITY_COOPERATIVE);
-                }
-
-                if (openResult != Constants.ResultCode.DP_SUCCESS)
-                {
-                    LastError = $"Failed to open reader: {openResult}";
-                    _reader = null;
-                    return false;
+                    rc = _reader.Open(Constants.CapturePriority.DP_PRIORITY_COOPERATIVE);
+                    if (rc != Constants.ResultCode.DP_SUCCESS)
+                    {
+                        LastError = "Failed to open reader: " + rc;
+                        _reader = null;
+                        return false;
+                    }
                 }
 
                 _initialized = true;
                 return true;
             }
-            catch (SDKException ex)
-            {
-                LastError = "SDK exception: " + ex.Message;
-                return false;
-            }
             catch (Exception ex)
             {
-                LastError = "Exception: " + ex.Message;
+                LastError = ex.Message;
+                _reader = null;
+                _initialized = false;
                 return false;
             }
         }
 
+        // ------------------------------------------------------------
+        // INTERNAL STATE MANAGEMENT
+        // ------------------------------------------------------------
+
         public bool HasTemplate(string name) => _templates.ContainsKey(name);
 
-        public bool RemoveTemplate(string name) => _templates.Remove(name);
+        public IEnumerable<string> GetUserNames() => _templates.Keys;
 
-        // ---------------- ENROL ----------------
+        public bool RemoveTemplate(string name)
+        {
+            bool removed = _templates.Remove(name);
 
+            // delete local file too
+            string path = Path.Combine(_templateDir, name + ".fpt");
+            if (File.Exists(path)) File.Delete(path);
+
+            _enrollmentIds.Remove(name);
+            return removed;
+        }
+
+        public void SetEnrollmentId(string name, int enrollmentId)
+        {
+            _enrollmentIds[name] = enrollmentId;
+        }
+
+        public int? GetEnrollmentId(string name)
+        {
+            if (_enrollmentIds.TryGetValue(name, out var id))
+                return id;
+            return null;
+        }
+
+        // ------------------------------------------------------------
+        // LOCAL TEMPLATE STORAGE
+        // ------------------------------------------------------------
+
+        /// <summary>
+        /// Save raw ANSI FMD bytes to disk and into memory (_templates).
+        /// These bytes must be the same as Fmd.Bytes produced by
+        /// Enrollment.CreateEnrollmentFmd(Constants.Formats.Fmd.ANSI, ...).
+        /// </summary>
+        public void SaveTemplate(string name, byte[] templateBytes)
+        {
+            if (string.IsNullOrWhiteSpace(name))
+                throw new ArgumentException("Name cannot be empty.", nameof(name));
+
+            if (templateBytes == null || templateBytes.Length == 0)
+                throw new ArgumentException("Template bytes cannot be empty.", nameof(templateBytes));
+
+            // 1) Persist raw template bytes to disk
+            string fullPath = Path.Combine(_templateDir, name + ".fpt");
+            File.WriteAllBytes(fullPath, templateBytes);
+
+            // 2) Load into memory as an FMD so Verify() can use it immediately
+            try
+            {
+                // Your SDK’s constructor signature is Fmd(byte[] bytes, int format, string version)
+                // We know the format is ANSI; version is typically "1.0.0".
+                var fmd = new Fmd(templateBytes, (int)Constants.Formats.Fmd.ANSI, "1.0.0");
+
+                _templates[name] = fmd;
+            }
+            catch (Exception ex)
+            {
+                LastError = "Failed to hydrate FMD for '" + name + "': " + ex.Message;
+            }
+        }
+
+        public byte[] LoadTemplate(string name, Action<string> log = null)
+        {
+            string file = Path.Combine(_templateDir, name + ".fpt");
+
+            if (!File.Exists(file))
+            {
+                log?.Invoke($"No local template file found for '{name}'.");
+                return null;
+            }
+
+            try
+            {
+                return File.ReadAllBytes(file);
+            }
+            catch (Exception ex)
+            {
+                log?.Invoke($"Failed reading local template for '{name}': {ex.Message}");
+                return null;
+            }
+        }
+
+        // ------------------------------------------------------------
+        // GET TEMPLATE BYTES (FOR SENDING TO SERVER)
+        // ------------------------------------------------------------
+        public byte[] GetTemplateBytes(string name, Action<string> log)
+        {
+            if (_templates.TryGetValue(name, out Fmd fmd))
+            {
+                try
+                {
+                    return fmd.Bytes;
+                }
+                catch (Exception ex)
+                {
+                    log?.Invoke($"Failed to access template bytes: {ex.Message}");
+                    return null;
+                }
+            }
+
+            // Fallback to disk (used for downloaded templates)
+            return LoadTemplate(name, log);
+        }
+
+        // ------------------------------------------------------------
+        // ENROLMENT
+        // ------------------------------------------------------------
         public bool Enrol(string name, Action<string> log)
         {
-            if (!_initialized)
+            if (!_initialized || _reader == null)
             {
                 log("Reader not initialized.");
                 return false;
             }
 
-            if (string.IsNullOrWhiteSpace(name))
-            {
-                log("Name is empty.");
-                return false;
-            }
-
             var samples = new List<Fmd>();
 
-            for (int i = 0; i < 4;)
+            while (samples.Count < 4)
             {
-                log($"[{name}] Scan {i + 1} of 4 – place the SAME finger.");
+                log($"[{name}] Scan {samples.Count + 1} of 4 – place the SAME finger.");
                 var fmd = CaptureFmd(log);
                 if (fmd == null)
                 {
                     log("Capture failed, repeating this scan.");
                     continue;
                 }
-
                 samples.Add(fmd);
-                i++;
             }
 
-            log("Creating enrollment template from 4 scans...");
+            log("Creating enrollment template from the 4 scans...");
 
-            DataResult<Fmd> enrollmentResult =
+            DataResult<Fmd> result =
                 Enrollment.CreateEnrollmentFmd(Constants.Formats.Fmd.ANSI, samples);
 
-            if (enrollmentResult.ResultCode == Constants.ResultCode.DP_SUCCESS &&
-                enrollmentResult.Data != null)
+            if (result.ResultCode == Constants.ResultCode.DP_SUCCESS && result.Data != null)
             {
-                _templates[name] = enrollmentResult.Data;
+                _templates[name] = result.Data;
                 log("Enrollment FMD created successfully.");
                 return true;
             }
 
-            log($"Enrollment failed: {enrollmentResult.ResultCode}");
+            log("Enrollment failed. Result: " + result.ResultCode);
             return false;
         }
 
-        // ---------------- IDENTIFY ----------------
-
-        public (bool success, string bestName, int bestScore, double confidence)
-            Identify(Action<string> log)
-        {
-            if (!_initialized)
-            {
-                log("Reader not initialized.");
-                return (false, null, int.MaxValue, 0);
-            }
-
-            if (_templates.Count == 0)
-            {
-                log("No templates enrolled.");
-                return (false, null, int.MaxValue, 0);
-            }
-
-            log("Scan a finger to identify...");
-            var probe = CaptureFmd(log);
-            if (probe == null)
-            {
-                log("Capture failed, cannot identify.");
-                return (false, null, int.MaxValue, 0);
-            }
-
-            string bestName = null;
-            int bestScore = int.MaxValue;
-
-            foreach (var kvp in _templates)
-            {
-                string name = kvp.Key;
-                Fmd enrolled = kvp.Value;
-
-                CompareResult cr = Comparison.Compare(probe, 0, enrolled, 0);
-                if (cr.ResultCode != Constants.ResultCode.DP_SUCCESS)
-                {
-                    log($"Compare failed for {name}: {cr.ResultCode}");
-                    continue;
-                }
-
-                int score = cr.Score;
-                log($"Compare score with {name}: {score}");
-
-                if (score < bestScore)
-                {
-                    bestScore = score;
-                    bestName = name;
-                }
-            }
-
-            if (bestName != null && bestScore <= MATCH_THRESHOLD)
-            {
-                double confidence = 1.0 - Math.Min(bestScore, MATCH_THRESHOLD) / (double)MATCH_THRESHOLD;
-                if (confidence < 0) confidence = 0;
-                if (confidence > 1) confidence = 1;
-
-                log($"Match: {bestName} (score {bestScore}, ~{confidence * 100:0}% confidence)");
-                return (true, bestName, bestScore, confidence);
-            }
-            else
-            {
-                log("No matching template found.");
-                return (false, null, bestScore, 0);
-            }
-        }
-
-        // ---------------- VERIFY ONE USER BY NAME ----------------
-
+        // ------------------------------------------------------------
+        // VERIFY (single user)
+        // ------------------------------------------------------------
         public (bool success, int score, double confidence) Verify(string name, Action<string> log)
         {
-            if (!_initialized)
+            if (!_initialized || _reader == null)
             {
                 log("Reader not initialized.");
-                return (false, int.MaxValue, 0);
-            }
-
-            if (string.IsNullOrWhiteSpace(name))
-            {
-                log("Name is empty.");
                 return (false, int.MaxValue, 0);
             }
 
@@ -213,7 +254,7 @@ namespace FingerprintWpfDemo
             CompareResult cr = Comparison.Compare(probe, 0, enrolled, 0);
             if (cr.ResultCode != Constants.ResultCode.DP_SUCCESS)
             {
-                log($"Compare failed: {cr.ResultCode}");
+                log("Compare failed: " + cr.ResultCode);
                 return (false, int.MaxValue, 0);
             }
 
@@ -223,37 +264,34 @@ namespace FingerprintWpfDemo
             if (score <= MATCH_THRESHOLD)
             {
                 double confidence = 1.0 - Math.Min(score, MATCH_THRESHOLD) / (double)MATCH_THRESHOLD;
-                if (confidence < 0) confidence = 0;
-                if (confidence > 1) confidence = 1;
-
-                log($"Fingerprint matches template for '{name}' (~{confidence * 100:0}% confidence).");
                 return (true, score, confidence);
             }
-            else
-            {
-                log("Fingerprint does NOT match the stored template.");
-                return (false, score, 0);
-            }
+
+            return (false, score, 0);
         }
 
-        // ---------------- CAPTURE ----------------
-
+        // ------------------------------------------------------------
+        // CAPTURE FROM READER
+        // ------------------------------------------------------------
         private Fmd CaptureFmd(Action<string> log)
         {
+            if (_reader == null)
+            {
+                log("No reader.");
+                return null;
+            }
+
             try
             {
-                log("Place finger on the reader...");
-
                 CaptureResult captureResult = _reader.Capture(
                     Constants.Formats.Fid.ANSI,
                     Constants.CaptureProcessing.DP_IMG_PROC_DEFAULT,
                     5000,
-                    _reader.Capabilities.Resolutions[0]
-                );
+                    _reader.Capabilities.Resolutions[0]);
 
                 if (captureResult.ResultCode != Constants.ResultCode.DP_SUCCESS)
                 {
-                    log($"Capture failed: {captureResult.ResultCode}");
+                    log("Capture failed. Result: " + captureResult.ResultCode);
                     return null;
                 }
 
@@ -263,38 +301,33 @@ namespace FingerprintWpfDemo
                     return null;
                 }
 
-                log($"Capture OK. Quality: {captureResult.Quality}");
+                log("Capture OK. Quality: " + captureResult.Quality);
 
-                DataResult<Fmd> fmdResult =
+                DataResult<Fmd> conversionResult =
                     FeatureExtraction.CreateFmdFromFid(captureResult.Data, Constants.Formats.Fmd.ANSI);
 
-                if (fmdResult.ResultCode != Constants.ResultCode.DP_SUCCESS ||
-                    fmdResult.Data == null)
+                if (conversionResult.ResultCode != Constants.ResultCode.DP_SUCCESS ||
+                    conversionResult.Data == null)
                 {
-                    log($"CreateFmdFromFid failed: {fmdResult.ResultCode}");
+                    log("CreateFmdFromFid failed. Result: " + conversionResult.ResultCode);
                     return null;
                 }
 
-                return fmdResult.Data;
-            }
-            catch (SDKException ex)
-            {
-                log("SDK exception during capture: " + ex.Message);
-                return null;
+                return conversionResult.Data;
             }
             catch (Exception ex)
             {
-                log("Exception during capture: " + ex.Message);
+                log("Capture exception: " + ex.Message);
                 return null;
             }
         }
 
+        // ------------------------------------------------------------
+        // DISPOSE
+        // ------------------------------------------------------------
         public void Dispose()
         {
-            try
-            {
-                _reader?.Dispose();
-            }
+            try { _reader?.Dispose(); }
             catch { }
         }
     }

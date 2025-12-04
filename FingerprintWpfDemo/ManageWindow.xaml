@@ -1,19 +1,82 @@
 ﻿<Window x:Class="FingerprintWpfDemo.ManageWindow"
         xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
-        Title="Manage Enrolled Users" Height="300" Width="350"
+        Title="Manage Enrolled Users"
+        Height="400"
+        Width="600"
         WindowStartupLocation="CenterOwner">
     <Grid Margin="10">
         <Grid.RowDefinitions>
+            <!-- Filter + Refresh -->
+            <RowDefinition Height="Auto"/>
+            <!-- List -->
             <RowDefinition Height="*"/>
+            <!-- Buttons -->
             <RowDefinition Height="Auto"/>
         </Grid.RowDefinitions>
 
-        <ListBox x:Name="lstUsers" />
+        <!-- Filter and refresh -->
+        <StackPanel Grid.Row="0"
+                    Orientation="Horizontal"
+                    Margin="0,0,0,8">
+            <TextBlock Text="Filter by name:"
+                       VerticalAlignment="Center"/>
+            <TextBox x:Name="txtFilter"
+                     Width="200"
+                     Margin="8,0,0,0"
+                     VerticalAlignment="Center"/>
+            <Button x:Name="btnRefresh"
+                    Content="Refresh"
+                    Width="80"
+                    Margin="8,0,0,0"
+                    Click="btnRefresh_Click"/>
+        </StackPanel>
 
-        <StackPanel Grid.Row="1" Orientation="Horizontal" HorizontalAlignment="Right" Margin="0,10,0,0">
-            <Button Content="Refresh" Width="80" Margin="0,0,10,0" Click="btnRefresh_Click"/>
-            <Button Content="Remove" Width="80" Click="btnRemove_Click"/>
+        <!-- List of enrolled users from server -->
+        <DataGrid x:Name="dgUsers"
+          Grid.Row="1"
+          AutoGenerateColumns="False"
+          IsReadOnly="True"
+          CanUserAddRows="False"
+          Margin="0,0,0,8"
+          SelectionMode="Single">
+            <DataGrid.Columns>
+                <DataGridTextColumn Header="Name"
+                            Binding="{Binding Name}"
+                            Width="*"/>
+                <DataGridTextColumn Header="Ref"
+                            Binding="{Binding Ref}"
+                            Width="150"/>
+                <DataGridTextColumn Header="Id"
+                            Binding="{Binding Id}"
+                            Width="80"/>
+            </DataGrid.Columns>
+
+            <!-- Simple grid-level context menu -->
+            <DataGrid.ContextMenu>
+                <ContextMenu>
+                    <MenuItem Header="Re-enrol user"
+                      Click="MenuReEnrol_Click" />
+                    <MenuItem Header="Delete user"
+                      Click="MenuDeleteUser_Click" />
+                </ContextMenu>
+            </DataGrid.ContextMenu>
+        </DataGrid>
+
+
+        <!-- Bottom buttons -->
+        <StackPanel Grid.Row="2"
+                    Orientation="Horizontal"
+                    HorizontalAlignment="Right">
+            <Button x:Name="btnRemoveLocal"
+                    Content="Remove Local Template"
+                    Width="150"
+                    Margin="0,0,8,0"
+                    Click="btnRemoveLocal_Click"/>
+            <Button x:Name="btnClose"
+                    Content="Close"
+                    Width="80"
+                    Click="btnClose_Click"/>
         </StackPanel>
     </Grid>
 </Window>

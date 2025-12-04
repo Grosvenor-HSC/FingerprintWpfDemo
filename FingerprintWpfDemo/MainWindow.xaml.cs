@@ -74,7 +74,7 @@ namespace FingerprintWpfDemo
 
             if (result == true && pinWindow.IsAuthorized)
             {
-                var mgmtWin = new ManagementWindow(_service);
+                var mgmtWin = new ManagementWindow(_service, _apiClient);
                 mgmtWin.Owner = this;
                 mgmtWin.Show();
             }
